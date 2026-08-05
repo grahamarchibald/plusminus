@@ -11,10 +11,14 @@ import json
 import os
 import re
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-DB_PATH = os.environ.get("MACRO_DB", "macro.db")
+
+def _db_path() -> str:
+    """Resolve the SQLite path at call time so MACRO_DB can be set after import
+    (tests point it at a tmp file; the CLI scripts read it via this helper)."""
+    return os.environ.get("MACRO_DB", "macro.db")
 
 SCHEMA = """
 -- Individual logged food entries
@@ -187,7 +191,7 @@ _DEFAULT_BODYWEIGHT_KG = 75.0  # fallback when no weigh-in exists
 
 
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(_db_path())
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -225,7 +229,7 @@ def _today() -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")
 
 
 # --- foods --------------------------------------------------------------
@@ -653,7 +657,7 @@ def contextualize_weight(day: str | None = None) -> str:
     """
     day = day or _today()
     t = weight_trend(day)
-    cur, trend7, prior = t["current"], t["trend_7day_avg"], t["prior_week_avg"]
+    cur, trend7 = t["current"], t["trend_7day_avg"]
     if cur is None:
         return "No weigh-ins yet — log a weight to see the trend."
 

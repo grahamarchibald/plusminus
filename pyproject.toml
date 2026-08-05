@@ -1,0 +1,36 @@
+[project]
+name = "plusminus"
+version = "0.1.0"
+description = "Offline-first nutrition + training + recovery dashboard with an honest estimation engine."
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+# Flat layout: modules live at the repo root, not under src/.
+src = [".", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Embedded SQL, long f-strings, and dense seed literals where an 88-col limit
+# isn't meaningful.
+"engine.py" = ["E501"]
+"db.py" = ["E501"]
+"app.py" = ["E501"]
+"scripts/*.py" = ["E501"]

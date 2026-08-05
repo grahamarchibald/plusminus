@@ -23,7 +23,7 @@ def main() -> None:
             ).fetchall()
         ]
     target = db.get_active_target()
-    print(f"Initialized {db.DB_PATH}")
+    print(f"Initialized {db._db_path()}")
     print("Tables:", ", ".join(tables))
     print("Active default target:", target)
 

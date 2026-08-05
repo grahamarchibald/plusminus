@@ -19,8 +19,8 @@ def d(offset: int) -> str:
 
 
 def main() -> None:
-    if os.path.exists(db.DB_PATH):
-        os.remove(db.DB_PATH)
+    if os.path.exists(db._db_path()):
+        os.remove(db._db_path())
     db.init_db()
 
     # 14 days of weigh-ins trending gently down (with noise)
@@ -85,7 +85,6 @@ def main() -> None:
 
     # habit ticks — realistic completion across the two weeks
     habits = db.list_habits()  # 20,000 steps, Read, Movement, Time with a friend
-    import itertools
     patterns = {
         habits[0]["name"]: [1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1],  # steps
         habits[1]["name"]: [1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1],  # read
