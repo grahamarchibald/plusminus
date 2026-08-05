@@ -1,4 +1,4 @@
-"""Initialize the MacroCoach SQLite store from the schema in SPEC.md §3.
+"""Initialize the PlusMinus SQLite store from the schema in SPEC.md §3.
 
 Usage:
     python scripts/init_db.py

@@ -1,4 +1,4 @@
-# MacroCoach — Design Brief (for Claude Design)
+# PlusMinus — Design Brief (for Claude Design)
 
 Use this if you want to prototype the interface before building. You don't need to design
 the whole app — most of it is a chat box. Prototype the **one screen that benefits from

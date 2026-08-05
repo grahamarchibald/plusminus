@@ -1,4 +1,4 @@
-"""SQLite store for MacroCoach.
+"""SQLite store for PlusMinus.
 
 The estimation engine is stateless; all state lives here. The MVP writes to
 `foods` and `targets`; the rest of the schema (SPEC.md §3) is created up front so

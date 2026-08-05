@@ -1,4 +1,4 @@
-"""MacroCoach API + static host.
+"""PlusMinus API + static host.
 
 Flow: POST /api/log runs the engine and returns an estimate *without saving*
 (the estimate is a proposal, not a fact — DESIGN_BRIEF.md). POST /api/confirm
@@ -20,7 +20,7 @@ from engine import estimate
 
 STATIC_DIR = Path(__file__).parent / "static"
 
-api = FastAPI(title="MacroCoach", version="0.1.0")
+api = FastAPI(title="PlusMinus", version="0.1.0")
 
 db.init_db()  # idempotent; safe on every boot
 

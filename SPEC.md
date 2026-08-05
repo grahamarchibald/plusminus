@@ -1,8 +1,8 @@
-# MacroCoach v2 — Training + Nutrition + Recovery Dashboard
+# PlusMinus v2 — Training + Nutrition + Recovery Dashboard
 
 ## Overview
 
-MacroCoach v1 is a nutrition tracker with an estimation engine. v2 unifies nutrition with
+PlusMinus v1 is a nutrition tracker with an estimation engine. v2 unifies nutrition with
 training and recovery under a **calendar timeline**, where every day shows its activity,
 macro targets, weight trend, and sleep — not as separate silos, but as one coherent story.
 
@@ -403,7 +403,7 @@ Weekly view updates with trend line + recovery avg
 **Prompt:**
 
 ```
-Build MacroCoach v2: a unified training + nutrition + recovery dashboard.
+Build PlusMinus v2: a unified training + nutrition + recovery dashboard.
 
 Start with v1 MVP (estimation engine + daily macro dashboard), then add:
 - Training log: type, intensity, duration, burn estimate

@@ -1,4 +1,4 @@
-"""The estimation engine — the heart of MacroCoach.
+"""The estimation engine — the heart of PlusMinus.
 
 A single Claude Messages API call (describe mode): a food description in,
 structured macros with honest uncertainty out. Stateless per call; the store

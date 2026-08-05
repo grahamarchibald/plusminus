@@ -1,4 +1,4 @@
-/* MacroCoach — calm, uncertainty-forward. Not gamified, no alarms. */
+/* PlusMinus — calm, uncertainty-forward. Not gamified, no alarms. */
 :root {
   --bg: #12130f;
   --panel: #1b1d17;
@@ -39,6 +39,7 @@ button { font: inherit; cursor: pointer; }
   backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
 }
 .brand { font-weight: 700; letter-spacing: .2px; }
+.brand-pm { color: var(--accent); margin-right: 5px; }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .tab {
   background: transparent; border: none; color: var(--muted);

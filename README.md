@@ -1,4 +1,4 @@
-# MacroCoach
+# PlusMinus (±)
 
 A macro tracker that **reasons about food instead of looking it up.**
 
@@ -7,7 +7,7 @@ search a food table, pick a portion, and it sums the rows. That works for packag
 and falls apart for whole-food meals, restaurant plates, and things you cook — exactly
 the food most people actually eat.
 
-MacroCoach replaces the food database with an **estimation engine**: a Claude-powered
+PlusMinus replaces the food database with an **estimation engine**: a Claude-powered
 module that turns a plain-language description or a photo into structured macros, *with a
 confidence level and its stated assumptions.* Around that engine sits a lightweight store
 and a dashboard, plus a coaching layer that adapts your targets and surfaces patterns over

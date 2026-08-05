@@ -1,6 +1,6 @@
 # Estimation Engine — System Prompt
 
-This is the core of MacroCoach. It turns a food description or photo into structured macros
+This is the core of PlusMinus. It turns a food description or photo into structured macros
 with honest uncertainty. Pass it to the Anthropic Messages API as the system prompt. Inject
 the user's saved meals and known-brand facts into the `{{USER_FACTS}}` block so repeat items
 resolve consistently.
