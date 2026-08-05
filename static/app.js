@@ -13,9 +13,8 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 // per-tab state
-let dailyDay = null;    // Daily tab
-let weekStart = null;   // Weekly tab
-let trainStart = null;  // Training tab
+let currentDay = null;  // shared day for the Nutrition + Training panes
+let weekStart = null;   // Eating-week pane
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -70,29 +69,69 @@ function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// ===================== TABS =====================
+// ===================== PANE CONTROLLER =====================
+// Two panes; each picks one of five views from a dropdown. Each view keeps its
+// existing DOM block (with its own IDs), so the controller just MOVES the block
+// into the chosen pane and runs its loader — every render function is reused
+// unchanged. Duplicates are prevented by swapping the two panes.
 
-function showTab(name) {
-  $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
-  $$(".panel").forEach((p) => (p.hidden = p.id !== "panel-" + name));
-  if (name === "daily") loadDaily();
-  else if (name === "weekly") loadWeekly();
-  else if (name === "training") showTrainSub(trainSub);
-  else if (name === "habits") loadHabits();
-}
-$$(".tab").forEach((t) => (t.onclick = () => showTab(t.dataset.tab)));
+const VIEWS = {
+  nutrition:  { label: "Nutrition",   group: "Nutrition", load: loadNutrition },
+  eatingweek: { label: "Eating week", group: "Nutrition", load: () => loadWeekly() },
+  training:   { label: "Training",    group: "Training",  load: loadTrainingToday },
+  program:    { label: "Program",     group: "Training",  load: loadMacro },
+  habits:     { label: "Habits",      group: "",          load: loadHabits },
+};
+const paneState = { a: "nutrition", b: "training" };
 
-// Training sub-tabs (Coach | Week | Macrocycle)
-let trainSub = "coach";
-function showTrainSub(name) {
-  trainSub = name;
-  $$(".subtab").forEach((t) => t.classList.toggle("active", t.dataset.sub === name));
-  $$("#panel-training .subpanel").forEach((p) => (p.hidden = p.id !== "sub-" + name));
-  if (name === "coach") initCoach();
-  else if (name === "week") loadTraining();
-  else if (name === "macro") loadMacro();
+function paneEl(key) { return document.querySelector(`.pane[data-pane="${key}"]`); }
+
+function populatePicker(select) {
+  const groups = {};
+  for (const [id, v] of Object.entries(VIEWS)) (groups[v.group] ??= []).push([id, v.label]);
+  select.innerHTML = Object.entries(groups).map(([g, items]) => {
+    const opts = items.map(([id, label]) => `<option value="${id}">${label}</option>`).join("");
+    return g ? `<optgroup label="${g}">${opts}</optgroup>` : opts;
+  }).join("");
 }
-$$(".subtab").forEach((t) => (t.onclick = () => showTrainSub(t.dataset.sub)));
+
+function placeView(key, viewId) {
+  const pane = paneEl(key);
+  const body = pane.querySelector(".pane-body");
+  const store = document.getElementById("viewStore");
+  // Evict whatever this pane currently holds back to the store, so views replace
+  // rather than stack. (Swaps re-place the evicted block into the other pane.)
+  Array.from(body.children).forEach((c) => store.appendChild(c));
+  paneState[key] = viewId;
+  body.appendChild(document.getElementById("view-" + viewId));
+  pane.querySelector(".pane-picker").value = viewId;
+  VIEWS[viewId].load();
+}
+
+function pickView(key, viewId) {
+  const other = key === "a" ? "b" : "a";
+  if (paneState[other] === viewId) {          // already shown elsewhere → swap panes
+    const prev = paneState[key];
+    placeView(other, prev);
+  }
+  placeView(key, viewId);
+}
+
+// Mount a view into a pane without a user click (e.g. "View macrocycle →").
+function showView(viewId) {
+  if (paneState.a === viewId || paneState.b === viewId) { VIEWS[viewId].load(); return; }
+  pickView(paneState.a === "training" ? "b" : "a", viewId);
+}
+
+function initPanes() {
+  document.querySelectorAll(".pane-picker").forEach((sel) => {
+    populatePicker(sel);
+    const key = sel.closest(".pane").dataset.pane;
+    sel.addEventListener("change", () => pickView(key, sel.value));
+  });
+  placeView("a", "nutrition");
+  placeView("b", "training");
+}
 
 // ===================== CHAT =====================
 
@@ -102,7 +141,6 @@ chatComposer.addEventListener("submit", async (e) => {
   const input = $("#chatInput");
   const text = input.value.trim();
   if (!text) return;
-  $("#chatHero").classList.add("shrunk");
   addBubble("user", escapeHtml(text));
   input.value = "";
   const btn = $("#chatSend");
@@ -129,9 +167,9 @@ function addBubble(who, html) {
   return el;
 }
 function scrollThread() {
-  const t = $("#chatThread");
-  t.scrollTop = t.scrollHeight;
-  window.scrollTo(0, document.body.scrollHeight);
+  // The thread lives inside a scrollable pane body — scroll that, not the window.
+  const scroller = $("#chatThread").closest(".pane-scroll");
+  if (scroller) scroller.scrollTop = scroller.scrollHeight;
 }
 
 function addEstimateCard(est, text) {
@@ -142,7 +180,7 @@ function addEstimateCard(est, text) {
   const assumptions = (est.assumptions || []).map((a) => `<li>${escapeHtml(a)}</li>`).join("");
   const swings = (est.swing_factors || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
   // Log to the day Daily is showing, not always today — ConfirmItem.day supports it.
-  const targetDay = dailyDay || todayISO();
+  const targetDay = currentDay || todayISO();
   const dayLabel = targetDay === todayISO() ? "today" : fmtDate(targetDay, { month: "short", day: "numeric" });
   const engine = est.engine || (est.offline ? { mode: "offline", reason: "error", message: "Offline estimate." } : { mode: "llm" });
   updateEngineFlag(engine);
@@ -185,6 +223,7 @@ function addEstimateCard(est, text) {
     }));
     el.querySelector(".card-actions").innerHTML = `<span class="logged">✓ Logged to ${dayLabel}</span>`;
     recentFoodNames.unshift(text.slice(0, 120));  // keep autocomplete fresh within the session
+    loadNutrition();  // live-update the rings/log in this same pane
     scrollThread();
   };
   scrollThread();
@@ -192,20 +231,28 @@ function addEstimateCard(est, text) {
 
 // ===================== DAILY =====================
 
-async function loadDaily() {
-  if (!dailyDay) dailyDay = todayISO();
-  const v = await api(`/api/day?day=${dailyDay}`);
-  $("#dTitle").textContent = dailyDay === todayISO() ? "Today" : fmtDate(dailyDay, { weekday: "short", month: "short", day: "numeric" });
+async function loadNutrition() {
+  if (!currentDay) currentDay = todayISO();
+  const v = await api(`/api/day?day=${currentDay}`);
+  $("#dTitle").textContent = currentDay === todayISO() ? "Today" : fmtDate(currentDay, { weekday: "short", month: "short", day: "numeric" });
   renderSummary(v, $("#dSummary"));
   renderRings(v, $("#dRings"), $("#dDayline"));
   renderLog(v.items, $("#dLog"));
 }
-$("#dPrev").onclick = () => { dailyDay = shift(dailyDay || todayISO(), -1); loadDaily(); };
-$("#dNext").onclick = () => { dailyDay = shift(dailyDay || todayISO(), 1); loadDaily(); };
-$("#dTrain").onclick = async () => { if (await addTrainingPrompt(dailyDay)) loadDaily(); };
-$("#dSleep").onclick = async () => { if (await logSleepPrompt(dailyDay)) loadDaily(); };
-$("#dWeigh").onclick = async () => { if (await weighInPrompt(dailyDay)) loadDaily(); };
-$("#dTarget").onclick = async () => { if (await editTargetPrompt(dailyDay)) loadDaily(); };
+
+// The two day-scoped panes (Nutrition + Training) share `currentDay`; refresh
+// whichever of them is mounted after a day change or an entry.
+function refreshDay() {
+  if (paneState.a === "nutrition" || paneState.b === "nutrition") loadNutrition();
+  if (paneState.a === "training" || paneState.b === "training") loadTrainingToday();
+}
+function stepDay(delta) { currentDay = shift(currentDay || todayISO(), delta); refreshDay(); }
+
+$("#dPrev").onclick = () => stepDay(-1);
+$("#dNext").onclick = () => stepDay(1);
+$("#dSleep").onclick = async () => { if (await logSleepPrompt(currentDay)) refreshDay(); };
+$("#dWeigh").onclick = async () => { if (await weighInPrompt(currentDay)) refreshDay(); };
+$("#dTarget").onclick = async () => { if (await editTargetPrompt(currentDay)) refreshDay(); };
 
 function renderSummary(v, host) {
   const target = v.target || {}, total = v.total || {}, st = v.status || {}, rec = v.recovery || {};
@@ -251,7 +298,7 @@ function renderRings(view, host, dayline) {
 
 function renderLog(items, host) {
   host.innerHTML = "";
-  if (!items.length) { host.innerHTML = `<div class="empty">No food logged — add it from the Chat tab.</div>`; return; }
+  if (!items.length) { host.innerHTML = `<div class="empty">No food logged — describe a meal below to log it.</div>`; return; }
   for (const it of items) {
     const conf = (it.confidence || "medium").toLowerCase();
     const el = document.createElement("div");
@@ -264,8 +311,8 @@ function renderLog(items, host) {
     el.querySelector(".entry-del").onclick = async () => {
       const ok = await confirmSheet({ title: "Remove item?", message: `Delete “${it.name}” from this day?`, confirmLabel: "Remove", danger: true });
       if (!ok) return;
-      await api(`/api/foods/${it.id}?day=${dailyDay || todayISO()}`, { method: "DELETE" });
-      loadDaily();
+      await api(`/api/foods/${it.id}?day=${currentDay || todayISO()}`, { method: "DELETE" });
+      refreshDay();
     };
     host.appendChild(el);
   }
@@ -290,7 +337,7 @@ async function loadWeekly(start) {
       <div class="dc-status">${STATUS_EMOJI[d.status] || "⚪"}</div>
       <div class="dc-wt">${d.weight != null ? d.weight : "—"}</div>
       <div class="dc-tgt">${d.target_calories ? Math.round(d.target_calories) : ""}</div>`;
-    cell.onclick = () => { dailyDay = d.day; showTab("daily"); };
+    cell.onclick = () => { currentDay = d.day; showView("nutrition"); refreshDay(); };
     cal.appendChild(cell);
   }
   drawSparkline($("#sparkline"), wv.trend.series || []);
@@ -313,39 +360,52 @@ function drawSparkline(svg, series) {
     series.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.2" fill="var(--accent)"/>`).join("");
 }
 
-// ===================== TRAINING schedule =====================
+// ===================== TRAINING (today overview) =====================
+// Compact "what's on for this day": the planned session from the active
+// program's current week + anything already logged for `currentDay`. The coach
+// chat lives beneath it (initCoach / sendCoach), reused unchanged.
 
-async function loadTraining(start) {
-  const wv = await api("/api/week" + (start ? `?start=${start}` : (trainStart ? `?start=${trainStart}` : "")));
-  trainStart = wv.start;
-  $("#tLabel").textContent = "Training · week of " + fmtDate(wv.start, { month: "short", day: "numeric" });
-  const host = $("#tWeek");
-  host.innerHTML = "";
-  const today = todayISO();
-  let totalBurn = 0;
-  for (const d of wv.days) {
-    const sessions = d.sessions || [];  // served inline by week_view — no per-day fetch
-    totalBurn += (d.activity.total_burn || 0);
-    const row = document.createElement("div");
-    row.className = "trainrow" + (d.day === today ? " today" : "");
-    const sHtml = sessions.length
-      ? sessions.map((s) => `<div class="tsession">${ICONS[s.type] || ""} <b>${cap(s.type)}</b>${s.intensity ? " · " + s.intensity : ""}${s.duration_min ? " · " + s.duration_min + "min" : ""}${s.est_burn ? ` · <span class="muted">~${Math.round(s.est_burn)} kcal</span>` : ""}${s.detail ? `<div class="tdetail">${escapeHtml(s.detail)}</div>` : ""}</div>`).join("")
-      : `<span class="muted">Rest / no session</span>`;
-    row.innerHTML = `
-      <div class="tr-day"><div class="tr-wd">${d.weekday}</div><div class="tr-date">${fmtDate(d.day, { month: "short", day: "numeric" })}</div>
-        <div class="tr-tier">${d.target_calories ? Math.round(d.target_calories) + " cal" : ""}${d.scope ? ` <span class="scope">${d.scope}</span>` : ""}</div></div>
-      <div class="tr-body">${sHtml}</div>
-      <button class="secondary tr-add">+ Add</button>`;
-    row.querySelector(".tr-add").onclick = async () => { if (await addTrainingPrompt(d.day)) loadTraining(trainStart); };
-    host.appendChild(row);
+async function loadTrainingToday() {
+  if (!currentDay) currentDay = todayISO();
+  const host = $("#trainToday");
+  $("#tTodayTitle").textContent = currentDay === todayISO()
+    ? "Today" : fmtDate(currentDay, { weekday: "short", month: "short", day: "numeric" });
+
+  const [day, progs] = await Promise.all([api(`/api/day?day=${currentDay}`), api("/api/programs")]);
+  const logged = day.training || [];
+
+  let planHtml;
+  if (!progs.length) {
+    planHtml = `<div class="tt-row muted">No program yet — ask the coach to build one below.</div>`;
+  } else {
+    const grid = await api(`/api/programs/${progs[0].id}`);
+    const cur = grid.weeks.find((w) => w.is_current);
+    const cell = cur && cur.days.find((d) => d.date === currentDay);
+    const head = cur
+      ? `<div class="tt-prog">${escapeHtml(grid.program.name)} — week ${cur.week}${cur.deload ? " <span class=\"scope\">deload</span>" : ""}</div>`
+      : `<div class="tt-prog muted">${escapeHtml(grid.program.name)} — outside the program's dates</div>`;
+    const plan = cell && cell.session
+      ? `<div class="tt-row">${ICONS[cell.session.type] || ""} Planned: <b>${escapeHtml(cell.session.role || cell.session.type)}</b>${cell.session.intensity ? " · " + cell.session.intensity : ""}${cell.session.planned_km != null ? " · " + cell.session.planned_km + "km" : ""}</div>`
+      : `<div class="tt-row muted">No planned session this day.</div>`;
+    planHtml = head + plan;
   }
-  const foot = document.createElement("p");
-  foot.className = "hint";
-  foot.textContent = `Week total burn: ~${Math.round(totalBurn)} kcal`;
-  host.appendChild(foot);
+
+  const target = day.target || {};
+  const targetLine = target.calories
+    ? `<div class="tt-row"><span class="tt-k">Fuel</span> ${Math.round(target.calories)} cal · ${Math.round(target.protein)}p ${Math.round(target.carb)}c ${Math.round(target.fat)}f <span class="scope">${escapeHtml(target.scope || "")}</span></div>`
+    : "";
+  const loggedHtml = logged.length
+    ? logged.map((s) => `<div class="tt-row">${ICONS[s.type] || ""} <b>${cap(s.type)}</b>${s.intensity ? " · " + s.intensity : ""}${s.duration_min ? " · " + s.duration_min + "min" : ""}${s.est_burn ? ` · <span class="muted">~${Math.round(s.est_burn)} kcal</span>` : ""}</div>`).join("")
+    : `<div class="tt-row muted">Nothing logged ${currentDay === todayISO() ? "today" : "this day"} yet.</div>`;
+
+  host.innerHTML = `<div class="card tt-card">
+    <div class="tt-h">Plan</div>${planHtml}${targetLine}
+    <hr class="tt-sep" />
+    <div class="tt-h">Logged</div>${loggedHtml}
+  </div>`;
+  initCoach();
 }
-$("#tPrev").onclick = () => loadTraining(shift(trainStart || todayISO(), -7));
-$("#tNext").onclick = () => loadTraining(shift(trainStart || todayISO(), 7));
+$("#tAddSession").onclick = async () => { if (await addTrainingPrompt(currentDay)) refreshDay(); };
 
 // ===================== HABITS =====================
 
@@ -355,7 +415,8 @@ async function loadHabits() {
   // map date -> {sleep, recovery} for the aligned journal chart
   const byDate = {};
   series.dates.forEach((d, i) => (byDate[d] = { sleep: series.sleep[i], recovery: series.recovery[i] }));
-  requestAnimationFrame(() => drawJournalChart(grid.dates, byDate));
+  // Double rAF so the freshly-mounted block is laid out before we measure row geometry.
+  requestAnimationFrame(() => requestAnimationFrame(() => drawJournalChart(grid.dates, byDate)));
 }
 
 function renderHabitGrid(grid) {
@@ -637,7 +698,7 @@ async function sendCoach(text) {
       const btn = document.createElement("button");
       btn.className = "secondary viewmacro";
       btn.textContent = "View macrocycle →";
-      btn.onclick = () => { currentProgramId = data.program_id; showTrainSub("macro"); };
+      btn.onclick = () => { currentProgramId = data.program_id; showView("program"); };
       thinking.appendChild(document.createElement("br"));
       thinking.appendChild(btn);
     }
@@ -765,6 +826,18 @@ async function initFoodSuggestions() {
   attachAutocomplete($("#chatInput"), $("#chatGhost"), () => [...recentFoodNames, ...FOOD_SUGGESTIONS]);
 }
 
+// Width-dependent views (habit chart, weight sparkline) measure the live DOM, so
+// re-render them when the pane size changes.
+let _resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    for (const key of ["a", "b"]) {
+      if (paneState[key] === "habits" || paneState[key] === "eatingweek") VIEWS[paneState[key]].load();
+    }
+  }, 150);
+});
+
 // boot
 initFoodSuggestions();
-showTab("chat");
+initPanes();

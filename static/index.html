@@ -7,133 +7,132 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <nav class="tabbar">
+  <div class="topbar">
     <div class="brand"><span class="brand-pm" aria-hidden="true">±</span>PlusMinus</div>
-    <div class="tabs">
-      <button class="tab active" data-tab="chat">Chat</button>
-      <button class="tab" data-tab="daily">Daily</button>
-      <button class="tab" data-tab="weekly">Weekly</button>
-      <button class="tab" data-tab="training">Training</button>
-      <button class="tab" data-tab="habits">Habits</button>
-    </div>
     <span class="engine-flag" id="engineFlag" hidden title="The reasoning engine isn't running — estimates are coming from the offline lookup table."></span>
-  </nav>
+  </div>
 
-  <!-- ===================== CHAT (home) ===================== -->
-  <section class="panel chatpanel" id="panel-chat">
-    <div class="chat-hero" id="chatHero">
-      <h1>What did you eat?</h1>
-      <p class="sub">Describe a meal in plain language — I'll estimate the macros, honestly, with a confidence range.</p>
-    </div>
-    <div class="chat-thread" id="chatThread"></div>
-    <form class="chat-composer" id="chatComposer">
-      <div class="input-wrap">
-        <div class="ghost" id="chatGhost" aria-hidden="true"></div>
-        <input id="chatInput" autocomplete="off"
-               placeholder="3 eggs, a serving of Flourish, 50g blueberries…" />
+  <!-- Two panes; each picks its view from a dropdown. Content blocks below are
+       moved into these bodies by the pane controller in app.js. -->
+  <main class="split">
+    <section class="pane" data-pane="a">
+      <header class="pane-head"><select class="pane-picker" aria-label="Left pane view"></select></header>
+      <div class="pane-body"></div>
+    </section>
+    <section class="pane" data-pane="b">
+      <header class="pane-head"><select class="pane-picker" aria-label="Right pane view"></select></header>
+      <div class="pane-body"></div>
+    </section>
+  </main>
+
+  <!-- Detached view blocks. Each is mounted into at most one pane at a time. -->
+  <div id="viewStore" hidden>
+
+    <!-- ===================== NUTRITION (day dashboard + food chat) ===================== -->
+    <div id="view-nutrition" class="viewblock">
+      <div class="pane-scroll">
+        <div class="daynav">
+          <button class="ghost" id="dPrev" aria-label="Previous day">‹</button>
+          <h2 id="dTitle">Today</h2>
+          <button class="ghost" id="dNext" aria-label="Next day">›</button>
+          <span class="grow"></span>
+          <button class="secondary" id="dSleep">+ Sleep</button>
+          <button class="secondary" id="dWeigh">+ Weigh-in</button>
+          <button class="secondary" id="dTarget">Target</button>
+        </div>
+        <div class="summary" id="dSummary"></div>
+        <div class="rings" id="dRings"></div>
+        <p class="dayline" id="dDayline"></p>
+        <div class="log" id="dLog"></div>
+        <div class="chat-thread" id="chatThread"></div>
       </div>
-      <button id="chatSend" type="submit">Send</button>
-    </form>
-  </section>
-
-  <!-- ===================== DAILY ===================== -->
-  <section class="panel" id="panel-daily" hidden>
-    <div class="daynav">
-      <button class="ghost" id="dPrev" aria-label="Previous day">‹</button>
-      <h2 id="dTitle">Today</h2>
-      <button class="ghost" id="dNext" aria-label="Next day">›</button>
-      <span class="grow"></span>
-      <button class="secondary" id="dTrain">+ Training</button>
-      <button class="secondary" id="dSleep">+ Sleep</button>
-      <button class="secondary" id="dWeigh">+ Weigh-in</button>
-      <button class="secondary" id="dTarget">Target</button>
-    </div>
-    <div class="summary" id="dSummary"></div>
-    <div class="rings" id="dRings"></div>
-    <p class="dayline" id="dDayline"></p>
-    <div class="log" id="dLog"></div>
-  </section>
-
-  <!-- ===================== WEEKLY (eating) ===================== -->
-  <section class="panel" id="panel-weekly" hidden>
-    <div class="weekhead">
-      <button class="ghost" id="wPrev" aria-label="Previous week">‹</button>
-      <h2 id="wLabel">Week</h2>
-      <button class="ghost" id="wNext" aria-label="Next week">›</button>
-    </div>
-    <div class="calendar" id="wCalendar"></div>
-    <div class="trendcard">
-      <svg id="sparkline" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true"></svg>
-      <p class="context" id="wContext"></p>
-      <p class="deficit" id="wDeficit"></p>
-    </div>
-  </section>
-
-  <!-- ===================== TRAINING (Coach | Week | Macrocycle) ===================== -->
-  <section class="panel" id="panel-training" hidden>
-    <div class="subnav">
-      <button class="subtab active" data-sub="coach">Coach</button>
-      <button class="subtab" data-sub="week">Week</button>
-      <button class="subtab" data-sub="macro">Macrocycle</button>
+      <form class="chat-composer pane-composer" id="chatComposer">
+        <div class="input-wrap">
+          <div class="ghost" id="chatGhost" aria-hidden="true"></div>
+          <input id="chatInput" autocomplete="off"
+                 placeholder="Log a meal — 3 eggs, a serving of Flourish, 50g blueberries…" />
+        </div>
+        <button id="chatSend" type="submit">Log</button>
+      </form>
     </div>
 
-    <!-- Coach -->
-    <div class="subpanel coachpanel" id="sub-coach">
-      <div class="chat-thread" id="coachThread"></div>
-      <div class="chips" id="coachChips"></div>
-      <form class="chat-composer inline" id="coachComposer">
+    <!-- ===================== EATING WEEK ===================== -->
+    <div id="view-eatingweek" class="viewblock">
+      <div class="pane-scroll">
+        <div class="weekhead">
+          <button class="ghost" id="wPrev" aria-label="Previous week">‹</button>
+          <h2 id="wLabel">Week</h2>
+          <button class="ghost" id="wNext" aria-label="Next week">›</button>
+        </div>
+        <div class="calendar" id="wCalendar"></div>
+        <div class="trendcard">
+          <svg id="sparkline" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <p class="context" id="wContext"></p>
+          <p class="deficit" id="wDeficit"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== TRAINING (today overview + coach chat) ===================== -->
+    <div id="view-training" class="viewblock">
+      <div class="pane-scroll">
+        <div class="daynav">
+          <h2 id="tTodayTitle">Training</h2>
+          <span class="grow"></span>
+          <button class="secondary" id="tAddSession">+ Training</button>
+        </div>
+        <div id="trainToday" class="train-today"></div>
+        <div class="chips" id="coachChips"></div>
+        <div class="chat-thread" id="coachThread"></div>
+      </div>
+      <form class="chat-composer pane-composer" id="coachComposer">
         <div class="input-wrap">
           <div class="ghost" id="coachGhost" aria-hidden="true"></div>
           <input id="coachInput" autocomplete="off"
-                 placeholder="Create a 10-week running program starting at 30km, +10% a week, week-4 deload…" />
+                 placeholder="Ask the coach — or “build a 10-week run block, +10%/wk, week-4 deload”…" />
         </div>
         <button type="submit">Send</button>
       </form>
     </div>
 
-    <!-- Week -->
-    <div class="subpanel" id="sub-week" hidden>
-      <div class="weekhead">
-        <button class="ghost" id="tPrev" aria-label="Previous week">‹</button>
-        <h2 id="tLabel">Training week</h2>
-        <button class="ghost" id="tNext" aria-label="Next week">›</button>
+    <!-- ===================== PROGRAM (macrocycle grid) ===================== -->
+    <div id="view-program" class="viewblock">
+      <div class="pane-scroll">
+        <div class="macro-head">
+          <select id="programSelect" class="select"></select>
+          <button class="secondary" id="newRun">+ Running block</button>
+          <button class="secondary" id="newClimb">+ Climbing block</button>
+          <span class="grow"></span>
+          <button class="secondary" id="delProgram">Delete</button>
+        </div>
+        <div id="macroGrid" class="macrogrid-wrap"></div>
       </div>
-      <div class="train-week" id="tWeek"></div>
     </div>
 
-    <!-- Macrocycle -->
-    <div class="subpanel" id="sub-macro" hidden>
-      <div class="macro-head">
-        <select id="programSelect" class="select"></select>
-        <button class="secondary" id="newRun">+ Running block</button>
-        <button class="secondary" id="newClimb">+ Climbing block</button>
-        <span class="grow"></span>
-        <button class="secondary" id="delProgram">Delete</button>
+    <!-- ===================== HABITS (journal) ===================== -->
+    <div id="view-habits" class="viewblock">
+      <div class="pane-scroll">
+        <div class="habits-head">
+          <h3>Habit tracker</h3>
+          <div class="chart-legend">
+            <span class="lg sleep">● Sleep (h)</span>
+            <span class="lg rec">● Recovery /100</span>
+          </div>
+          <button class="secondary" id="addHabit">+ Add habit</button>
+        </div>
+        <div class="journal">
+          <div class="habitgrid-wrap">
+            <table class="habitgrid" id="habitGrid"></table>
+          </div>
+          <div class="chartcol">
+            <div class="chartcol-head" id="chartHead"></div>
+            <svg id="journalChart" preserveAspectRatio="none"></svg>
+          </div>
+        </div>
       </div>
-      <div id="macroGrid" class="macrogrid-wrap"></div>
     </div>
-  </section>
 
-  <!-- ===================== HABITS (journal) ===================== -->
-  <section class="panel" id="panel-habits" hidden>
-    <div class="habits-head">
-      <h3>Habit tracker</h3>
-      <div class="chart-legend">
-        <span class="lg sleep">● Sleep (h)</span>
-        <span class="lg rec">● Recovery /100</span>
-      </div>
-      <button class="secondary" id="addHabit">+ Add habit</button>
-    </div>
-    <div class="journal">
-      <div class="habitgrid-wrap">
-        <table class="habitgrid" id="habitGrid"></table>
-      </div>
-      <div class="chartcol">
-        <div class="chartcol-head" id="chartHead"></div>
-        <svg id="journalChart" preserveAspectRatio="none"></svg>
-      </div>
-    </div>
-  </section>
+  </div>
 
   <template id="ringTpl">
     <div class="ring">
