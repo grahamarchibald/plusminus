@@ -286,8 +286,8 @@ async function loadWeekly(start) {
   const def = wv.avg_daily_deficit;
   $("#wDeficit").textContent = def == null ? "" : def > 0 ? `Avg daily deficit: ${Math.round(def)} cal` : `Avg daily surplus: ${Math.round(-def)} cal`;
 }
-$("#wPrev").onclick = async () => { const wv = await api(`/api/week?start=${weekStart}`); loadWeekly(wv.prev); };
-$("#wNext").onclick = async () => { const wv = await api(`/api/week?start=${weekStart}`); loadWeekly(wv.next); };
+$("#wPrev").onclick = () => loadWeekly(shift(weekStart || todayISO(), -7));
+$("#wNext").onclick = () => loadWeekly(shift(weekStart || todayISO(), 7));
 
 function drawSparkline(svg, series) {
   svg.innerHTML = "";
@@ -312,8 +312,7 @@ async function loadTraining(start) {
   const today = todayISO();
   let totalBurn = 0;
   for (const d of wv.days) {
-    const detail = await api(`/api/day?day=${d.day}`);
-    const sessions = detail.training || [];
+    const sessions = d.sessions || [];  // served inline by week_view — no per-day fetch
     totalBurn += (d.activity.total_burn || 0);
     const row = document.createElement("div");
     row.className = "trainrow" + (d.day === today ? " today" : "");
@@ -333,8 +332,8 @@ async function loadTraining(start) {
   foot.textContent = `Week total burn: ~${Math.round(totalBurn)} kcal`;
   host.appendChild(foot);
 }
-$("#tPrev").onclick = async () => { const wv = await api(`/api/week?start=${trainStart}`); loadTraining(wv.prev); };
-$("#tNext").onclick = async () => { const wv = await api(`/api/week?start=${trainStart}`); loadTraining(wv.next); };
+$("#tPrev").onclick = () => loadTraining(shift(trainStart || todayISO(), -7));
+$("#tNext").onclick = () => loadTraining(shift(trainStart || todayISO(), 7));
 
 // ===================== HABITS =====================
 

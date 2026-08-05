@@ -490,9 +490,14 @@ def list_training(day: str | None = None) -> list[dict[str, Any]]:
 _TRAINING_TYPES = {"climb", "run", "lift", "dance", "mixed"}
 
 
-def day_training_summary(day: str) -> dict[str, Any]:
-    """Aggregate the day's sessions: dominant type, total burn/load, hardest intensity."""
-    sessions = list_training(day)
+def day_training_summary(day: str, *, sessions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Aggregate the day's sessions: dominant type, total burn/load, hardest intensity.
+
+    `sessions` may be passed in to avoid re-querying when the caller already
+    fetched the day's sessions (see _day_view's single-pass fan-out).
+    """
+    if sessions is None:
+        sessions = list_training(day)
     if not sessions:
         return {"type": "rest", "label": "Rest", "sessions": 0,
                 "total_burn": 0.0, "intensity": None}
@@ -515,13 +520,16 @@ def day_training_summary(day: str) -> dict[str, Any]:
     }
 
 
-def resolve_target_for_day(day: str) -> dict[str, Any]:
+def resolve_target_for_day(day: str, *, sessions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Map a day's training to a target scope, then return that scope's active target.
 
     any max climb/run -> high_output; any stimulus training -> training;
     only rest/walk -> rest; no sessions -> default.
+
+    `sessions` may be passed in to reuse an already-fetched day (see _day_view).
     """
-    sessions = list_training(day)
+    if sessions is None:
+        sessions = list_training(day)
     if not sessions:
         scope = "default"
     elif any((s["type"] in ("climb", "run") and (s.get("intensity") == "max"))
@@ -573,16 +581,31 @@ def get_sleep(day: str) -> dict[str, Any] | None:
 
 # --- recovery (computed on read) ---------------------------------------
 
-def compute_recovery(day: str) -> dict[str, Any]:
+def compute_recovery(
+    day: str,
+    *,
+    roll: dict[str, Any] | None = None,
+    target: dict[str, Any] | None = None,
+    summary: dict[str, Any] | None = None,
+    sleep: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Composite readiness: sleep 40% + macro-hit 40% + training-load 20%.
 
     Null-safe: any missing component drops out and the weights renormalize;
     with nothing to go on, returns score=None.
+
+    All four inputs may be passed in precomputed. When the caller already has
+    them (see _day_view), this avoids re-running get_sleep / day_rollup /
+    resolve_target_for_day / day_training_summary a second time.
     """
-    sleep = get_sleep(day)
-    roll = day_rollup(day)
-    target = resolve_target_for_day(day)
-    summary = day_training_summary(day)
+    if sleep is None:
+        sleep = get_sleep(day)
+    if roll is None:
+        roll = day_rollup(day)
+    if target is None:
+        target = resolve_target_for_day(day)
+    if summary is None:
+        summary = day_training_summary(day)
 
     components: list[tuple[float, float]] = []  # (score, weight)
 
@@ -709,9 +732,10 @@ def week_view(start: str | None = None) -> dict[str, Any]:
     deficits = []
     for i in range(7):
         d = (d0 + timedelta(days=i)).strftime("%Y-%m-%d")
+        sessions = list_training(d)  # fetch once; reused by target + summary + client
         roll = day_rollup(d)
-        target = resolve_target_for_day(d)
-        summary = day_training_summary(d)
+        target = resolve_target_for_day(d, sessions=sessions)
+        summary = day_training_summary(d, sessions=sessions)
         # overall status = worst per-macro status for the day (only if food logged)
         status = "none"
         if roll["item_count"] > 0:
@@ -726,6 +750,7 @@ def week_view(start: str | None = None) -> dict[str, Any]:
             "day": d,
             "weekday": (d0 + timedelta(days=i)).strftime("%a"),
             "activity": summary,
+            "sessions": sessions,  # lets the Training tab render without 7 extra /api/day calls
             "status": status,
             "weight": _weight_on(d),
             "target_calories": target.get("calories"),

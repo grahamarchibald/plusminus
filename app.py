@@ -117,10 +117,19 @@ class LogDayReq(BaseModel):
 # --- helpers ------------------------------------------------------------
 
 def _day_view(day: str | None = None) -> dict[str, Any]:
-    """Everything the daily summary card needs: macros, training, sleep, recovery."""
+    """Everything the daily summary card needs: macros, training, sleep, recovery.
+
+    Fetches each shared piece once (day's sessions, rollup, sleep) and threads
+    them through resolve_target_for_day / day_training_summary / compute_recovery,
+    which otherwise each re-derive them — collapsing list_training from 5 queries
+    per view to 1 (see §2).
+    """
     day = day or db._today()
+    sessions = db.list_training(day)
     roll = db.day_rollup(day)
-    target = db.resolve_target_for_day(day)  # activity-scaled
+    sleep = db.get_sleep(day)
+    target = db.resolve_target_for_day(day, sessions=sessions)  # activity-scaled
+    summary = db.day_training_summary(day, sessions=sessions)
     total = roll["total"]
     remaining = {m: round((target.get(m) or 0) - total.get(m, 0), 1) for m in db.MACROS}
     status = {m: db.macro_status(total.get(m, 0), target.get(m) or 0) for m in db.MACROS}
@@ -133,11 +142,13 @@ def _day_view(day: str | None = None) -> dict[str, Any]:
         "target": target,
         "remaining": remaining,
         "status": status,
-        "training": db.list_training(day),
-        "training_summary": db.day_training_summary(day),
-        "sleep": db.get_sleep(day),
+        "training": sessions,
+        "training_summary": summary,
+        "sleep": sleep,
         "weight": db.weight_for_day(day),
-        "recovery": db.compute_recovery(day),
+        "recovery": db.compute_recovery(
+            day, roll=roll, target=target, summary=summary, sleep=sleep
+        ),
     }
 
 
