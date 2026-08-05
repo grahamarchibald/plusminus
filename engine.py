@@ -9,6 +9,7 @@ passes any needed context in. The system prompt lives in
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from functools import lru_cache
@@ -16,9 +17,29 @@ from pathlib import Path
 
 import anthropic
 
+log = logging.getLogger("plusminus.engine")
+
 MODEL = os.environ.get("MACRO_MODEL", "claude-opus-5")
 PROMPT_PATH = Path(__file__).parent / "prompts" / "estimation_engine.md"
 USER_FACTS_PATH = Path(__file__).parent / "user_facts.txt"
+
+# Each offline `reason` maps to one plain-language sentence the UI shows verbatim.
+# The whole point of §1: a degraded (lookup-table) estimate must never masquerade
+# as a reasoned one.
+OFFLINE_REASONS = {
+    "forced": "Offline mode is on (MACRO_OFFLINE=1) — this is a lookup-table estimate.",
+    "no_key": "No API key set — this is a lookup-table estimate, not a reasoned one. "
+              "Set ANTHROPIC_API_KEY for the real engine.",
+    "auth_failed": "Your API key was rejected — this is a lookup-table estimate, not a "
+                   "reasoned one. Check ANTHROPIC_API_KEY.",
+    "rate_limited": "Rate limited by the API — falling back to a lookup-table estimate. "
+                    "Try again shortly.",
+    "unreachable": "Couldn't reach the API — falling back to a lookup-table estimate. "
+                   "Check your connection.",
+    "bad_output": "The engine returned something unparseable — falling back to a "
+                  "lookup-table estimate.",
+    "error": "The engine hit an unexpected error — falling back to a lookup-table estimate.",
+}
 
 # The contract fields the dashboard depends on (SPEC.md §2).
 _REQUIRED = ("items", "total", "confidence", "uncertainty_cal", "assumptions", "swing_factors")
@@ -207,18 +228,58 @@ def offline_estimate(text: str) -> dict:
         "total": total,
         "confidence": confidence,
         "uncertainty_cal": unc,
-        "assumptions": ["Offline estimate — standard portions assumed (add ANTHROPIC_API_KEY for the reasoning engine)"],
+        "assumptions": ["Standard portions assumed."],
         "swing_factors": ["portion size", "cooking fat / hidden oil"],
         "clarify": None,
         "offline": True,
     }
 
 
+def _offline(text: str, reason: str, detail: str | None = None) -> dict:
+    """Offline estimate tagged with why the real engine didn't run.
+
+    The `engine` block is the contract the UI reads to show an honest banner;
+    `offline: True` is kept for backward compatibility with older callers.
+    """
+    data = offline_estimate(text)
+    data["engine"] = {
+        "mode": "offline",
+        "reason": reason,
+        "message": OFFLINE_REASONS.get(reason, OFFLINE_REASONS["error"]),
+        "detail": detail,
+    }
+    return data
+
+
 def estimate(text: str) -> dict:
-    """Try the real engine; fall back to the offline estimator without a key."""
+    """Run the reasoning engine; on any failure fall back to the offline
+    estimator, always recording *why* so degraded mode is visible (§1).
+    """
     if os.environ.get("MACRO_OFFLINE") == "1":
-        return offline_estimate(text)
+        return _offline(text, "forced")
     try:
-        return estimate_describe(text)
-    except Exception:
-        return offline_estimate(text)
+        data = estimate_describe(text)
+        data["engine"] = {"mode": "llm", "reason": "ok", "message": None, "detail": None}
+        data["offline"] = False
+        return data
+    except anthropic.AuthenticationError as e:
+        # No key set at all vs. a key that was rejected — distinct, actionable.
+        reason = "auth_failed" if os.environ.get("ANTHROPIC_API_KEY") else "no_key"
+        return _offline(text, reason, _short(e))
+    except anthropic.RateLimitError as e:
+        return _offline(text, "rate_limited", _short(e))
+    except anthropic.APIConnectionError as e:
+        return _offline(text, "unreachable", _short(e))
+    except EstimationError as e:
+        # The model's raw text is the only way to debug a bad-output case.
+        log.warning("Estimation engine returned unparseable output: %s | raw=%r",
+                    e, e.raw)
+        return _offline(text, "bad_output", str(e))
+    except Exception as e:  # noqa: BLE001 — last-resort: degrade, never 500 the logger
+        log.warning("Estimation engine hit an unexpected error: %s", e)
+        return _offline(text, "error", _short(e))
+
+
+def _short(e: Exception) -> str:
+    """A one-line detail string for the UI, never the full traceback."""
+    return str(e).splitlines()[0][:200] if str(e).strip() else type(e).__name__

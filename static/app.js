@@ -51,6 +51,20 @@ function statusOf(consumed, target) {
   return "under";
 }
 function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
+
+// Persistent header indicator: lit whenever the last estimate ran offline, so a
+// degraded (lookup-table) session is impossible to miss across tabs.
+function updateEngineFlag(engine) {
+  const flag = $("#engineFlag");
+  if (!flag) return;
+  const offline = engine && engine.mode === "offline";
+  flag.hidden = !offline;
+  if (offline) {
+    const label = { no_key: "no API key", auth_failed: "key rejected", rate_limited: "rate limited", unreachable: "offline", forced: "offline mode", bad_output: "engine error", error: "engine error" }[engine.reason] || "offline";
+    flag.textContent = "⚠ lookup-table mode · " + label;
+    if (engine.message) flag.title = engine.message;
+  }
+}
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -126,13 +140,18 @@ function addEstimateCard(est, text) {
     `<tr><td>${escapeHtml(it.name)}</td><td class="n">${Math.round(it.calories || 0)} cal · ${Math.round(it.protein || 0)}p ${Math.round(it.carb || 0)}c ${Math.round(it.fat || 0)}f</td></tr>`).join("");
   const assumptions = (est.assumptions || []).map((a) => `<li>${escapeHtml(a)}</li>`).join("");
   const swings = (est.swing_factors || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+  const engine = est.engine || (est.offline ? { mode: "offline", reason: "error", message: "Offline estimate." } : { mode: "llm" });
+  updateEngineFlag(engine);
+  const banner = engine.mode === "offline"
+    ? `<div class="engine-banner">⚠ ${escapeHtml(engine.message || "Lookup-table estimate — the reasoning engine didn't run.")}</div>`
+    : "";
   const el = document.createElement("div");
   el.className = "bubble assistant";
   el.innerHTML = `
-    <div class="card">
+    <div class="card${engine.mode === "offline" ? " degraded" : ""}">
+      ${banner}
       <div class="conf"><span class="pill ${conf}">${conf}</span> confidence ·
-        <b class="approx">≈${Math.round(t.calories || 0)} cal</b> ${est.uncertainty_cal ? "±" + Math.round(est.uncertainty_cal) : ""}
-        ${est.offline ? '<span class="offline-tag">offline estimate</span>' : ""}</div>
+        <b class="approx">≈${Math.round(t.calories || 0)} cal</b> ${est.uncertainty_cal ? "±" + Math.round(est.uncertainty_cal) : ""}</div>
       ${est.clarify ? `<div class="clarify"><b>One question:</b> ${escapeHtml(est.clarify)}</div>` : ""}
       <table class="comp">${rows}
         <tr class="tot"><td>Total</td><td class="n">

@@ -28,7 +28,7 @@ db.init_db()  # idempotent; safe on every boot
 # --- request models -----------------------------------------------------
 
 class LogRequest(BaseModel):
-    text: str
+    text: str = Field(min_length=1, max_length=2000)
 
 
 class ConfirmItem(BaseModel):
