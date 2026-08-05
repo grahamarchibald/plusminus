@@ -133,6 +133,42 @@ function initPanes() {
   placeView("b", "training");
 }
 
+// ===================== THEME + LAYOUT (persisted) =====================
+
+function effectiveTheme() {
+  const set = document.documentElement.dataset.theme;
+  if (set) return set;
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+function initTheme() {
+  const saved = localStorage.getItem("pm-theme");        // unset → follow the OS
+  if (saved) document.documentElement.dataset.theme = saved;
+  const btn = $("#themeToggle");
+  const paint = () => { btn.textContent = effectiveTheme() === "light" ? "☀" : "☾"; };
+  paint();
+  btn.onclick = () => {
+    const next = effectiveTheme() === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("pm-theme", next);
+    paint();
+  };
+}
+
+function applyLayout(mode) {
+  document.querySelector(".split").dataset.mode = mode;
+  $$("#layoutToggle button").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  // Coming back to split, refresh the re-shown pane (its data-day/coach may be stale).
+  if (mode === "split") VIEWS[paneState.b].load();
+}
+function initLayout() {
+  const saved = localStorage.getItem("pm-layout") || "split";  // first visit → split
+  applyLayout(saved);
+  $$("#layoutToggle button").forEach((b) => b.onclick = () => {
+    localStorage.setItem("pm-layout", b.dataset.mode);
+    applyLayout(b.dataset.mode);
+  });
+}
+
 // ===================== CHAT =====================
 
 const chatComposer = $("#chatComposer");
@@ -412,11 +448,10 @@ $("#tAddSession").onclick = async () => { if (await addTrainingPrompt(currentDay
 async function loadHabits() {
   const [grid, series] = await Promise.all([api("/api/habit_grid?days=14"), api("/api/series?days=14")]);
   renderHabitGrid(grid);
-  // map date -> {sleep, recovery} for the aligned journal chart
   const byDate = {};
   series.dates.forEach((d, i) => (byDate[d] = { sleep: series.sleep[i], recovery: series.recovery[i] }));
-  // Double rAF so the freshly-mounted block is laid out before we measure row geometry.
-  requestAnimationFrame(() => requestAnimationFrame(() => drawJournalChart(grid.dates, byDate)));
+  // Double rAF so the freshly-mounted card is laid out before we read its width.
+  requestAnimationFrame(() => requestAnimationFrame(() => drawRecoveryChart(series.dates, byDate)));
 }
 
 function renderHabitGrid(grid) {
@@ -462,62 +497,49 @@ $("#addHabit").onclick = async () => {
   if (name) { await api("/api/habits", jsonPost({ name })); loadHabits(); }
 };
 
-// Vertical dual-line chart, aligned row-for-row with the grid (like the journal).
-// dates: newest-first (grid order). Sleep (blue) + Recovery (red) run top->bottom.
-function drawJournalChart(dates, byDate) {
-  const svg = $("#journalChart");
-  const table = $("#habitGrid");
-  const tbody = table.tBodies[0];
-  const thead = table.tHead;
-  if (!tbody || !tbody.rows.length) return;
-  const tbodyTop = tbody.getBoundingClientRect().top;
-  const H = tbody.getBoundingClientRect().height;
-  const W = 150, padX = 22;
-  const SLEEP_MIN = 3, SLEEP_MAX = 10;      // hours band
-  const REC_MIN = 0, REC_MAX = 100;         // recovery band
-  const xS = (h) => padX + ((Math.max(SLEEP_MIN, Math.min(SLEEP_MAX, h)) - SLEEP_MIN) / (SLEEP_MAX - SLEEP_MIN)) * (W - 2 * padX);
-  const xR = (r) => padX + ((Math.max(REC_MIN, Math.min(REC_MAX, r)) - REC_MIN) / (REC_MAX - REC_MIN)) * (W - 2 * padX);
-
-  const yByRow = Array.from(tbody.rows).map((r) => {
-    const rc = r.getBoundingClientRect();
-    return rc.top - tbodyTop + rc.height / 2;
-  });
+// Horizontal dual-line chart in its own full-width card (so it stays visible at
+// any pane width). X = time (oldest→newest); sleep 3–10h and recovery 0–100 each
+// normalized to the plot band. viewBox matches the SVG's pixel size, so no DOM
+// row measurement and no aspect-ratio distortion.
+function drawRecoveryChart(dates, byDate) {
+  const svg = $("#recoveryChart");
+  if (!svg) return;
+  const seq = dates.slice().reverse();          // API returns newest-first
+  const n = seq.length;
+  const W = Math.max(240, Math.round(svg.clientWidth) || 600);
+  const H = Math.round(svg.clientHeight) || 120;
+  const padX = 12, padTop = 12, padBottom = 20;
+  const plotH = H - padTop - padBottom;
+  const x = (i) => (n <= 1 ? W / 2 : padX + (i / (n - 1)) * (W - 2 * padX));
+  const yOf = (v, lo, hi) => padTop + (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * plotH;
 
   let s = "";
-  // faint gridlines per row
-  yByRow.forEach((y) => (s += `<line x1="0" y1="${y.toFixed(1)}" x2="${W}" y2="${y.toFixed(1)}" stroke="var(--line)" stroke-width="0.5" opacity="0.5"/>`));
-
-  const build = (getVal, xmap, color) => {
+  for (let k = 0; k <= 3; k++) {                 // faint quartile gridlines
+    const y = (padTop + (k / 3) * plotH).toFixed(1);
+    s += `<line x1="${padX}" y1="${y}" x2="${W - padX}" y2="${y}" stroke="var(--line)" stroke-width="0.6"/>`;
+  }
+  const build = (getVal, lo, hi, color) => {
     let seg = [], out = "";
-    const flush = () => {
-      if (seg.length >= 2) out += `<polyline points="${seg.map((p) => p.join(",")).join(" ")}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/>`;
-      seg = [];
-    };
-    dates.forEach((d, i) => {
-      const v = byDate[d] && getVal(byDate[d]);
+    const flush = () => { if (seg.length >= 2) out += `<polyline points="${seg.join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`; seg = []; };
+    seq.forEach((d, i) => {
+      const o = byDate[d]; const v = o && getVal(o);
       if (v == null) { flush(); return; }
-      const x = xmap(v), y = yByRow[i];
-      seg.push([x.toFixed(1), y.toFixed(1)]);
-      out += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.3" fill="${color}"/>`;
+      const px = x(i).toFixed(1), py = yOf(v, lo, hi).toFixed(1);
+      seg.push(`${px},${py}`);
+      out += `<circle cx="${px}" cy="${py}" r="2.4" fill="${color}"/>`;
     });
     flush();
     return out;
   };
-
-  const sleepColor = "var(--under)", recColor = "#d0655a";
-  s += build((o) => o.sleep, xS, sleepColor);
-  s += build((o) => o.recovery, xR, recColor);
-
-  svg.setAttribute("viewBox", `0 0 ${W} ${Math.max(1, H)}`);
-  svg.setAttribute("width", W);
-  svg.style.height = H + "px";
+  s += build((o) => o.sleep, 3, 10, "var(--under)");
+  s += build((o) => o.recovery, 0, 100, "var(--over)");
+  if (n) {
+    const lab = (iso) => fmtDate(iso, { month: "short", day: "numeric" });
+    s += `<text x="${padX}" y="${H - 6}" font-size="9" fill="var(--muted)">${lab(seq[0])}</text>`;
+    s += `<text x="${W - padX}" y="${H - 6}" font-size="9" fill="var(--muted)" text-anchor="end">${lab(seq[n - 1])}</text>`;
+  }
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.innerHTML = s;
-
-  // header: axis hints, aligned with the grid's header height
-  const headH = thead ? thead.getBoundingClientRect().height : 40;
-  const head = $("#chartHead");
-  head.style.height = headH + "px";
-  head.innerHTML = `<span class="axmin">3h·0</span><span class="axmax">10h·100</span>`;
 }
 
 // ===================== INLINE ENTRY SHEETS =====================
@@ -839,5 +861,7 @@ window.addEventListener("resize", () => {
 });
 
 // boot
+initTheme();
 initFoodSuggestions();
 initPanes();
+initLayout();

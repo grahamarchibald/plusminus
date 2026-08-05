@@ -1,25 +1,61 @@
-/* PlusMinus — calm, uncertainty-forward. Not gamified, no alarms. */
+/* PlusMinus — calm, uncertainty-forward. Not gamified, no alarms.
+   Two palettes: Ember (warm dark) and Linen (warm light). The default is Ember;
+   prefers-color-scheme:light selects Linen; a manual [data-theme] on <html> wins
+   over the OS in both directions. */
+
+/* --- Ember (dark) — the default palette --- */
 :root {
-  --bg: #12130f;
-  --panel: #1b1d17;
-  --panel-2: #232620;
-  --ink: #e9e7dd;
-  --muted: #9a9788;
-  --line: #33362d;
-  --accent: #cbb994;
-  --under: #7fa7c9;
-  --ontrack: #8fbf87;
-  --over: #d29a7a;
-  --hi: #8fbf87;
-  --med: #cbb994;
-  --lo: #b9927a;
+  --bg: #14110d;
+  --panel: #1e1913;
+  --panel-2: #2a231a;
+  --ink: #f0e9dd;
+  --muted: #a49a86;
+  --line: #37301f;
+  --accent: #e0a14e;
+  --accent-ink: #1c1509;   /* text on accent-filled controls */
+  --under: #7aa7c4;
+  --ontrack: #86c489;
+  --over: #e0855a;
+  --hi: #86c489;
+  --med: #e0a14e;
+  --lo: #d99a72;
+  --shadow: 0 8px 28px rgba(0, 0, 0, .35);
   font-size: 16px;
 }
+/* --- Linen (light) --- */
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #f4f1ea; --panel: #fbf9f3; --panel-2: #efece2;
-    --ink: #2b2a24; --muted: #6f6d60; --line: #ddd8c9; --accent: #9a824f;
+    --bg: #f4f1ea;
+    --panel: #fffdf7;
+    --panel-2: #efece2;
+    --ink: #2b2a24;
+    --muted: #6f6d60;
+    --line: #e4dfd2;
+    --accent: #a8834f;
+    --accent-ink: #fdfbf5;
+    --under: #5b86a8;
+    --ontrack: #5a9e6f;
+    --over: #c0794f;
+    --hi: #5a9e6f;
+    --med: #a8834f;
+    --lo: #c0794f;
+    --shadow: 0 8px 24px rgba(60, 50, 30, .12);
   }
+}
+/* Manual overrides win over the OS preference. */
+:root[data-theme="dark"] {
+  --bg: #14110d; --panel: #1e1913; --panel-2: #2a231a; --ink: #f0e9dd;
+  --muted: #a49a86; --line: #37301f; --accent: #e0a14e; --accent-ink: #1c1509;
+  --under: #7aa7c4; --ontrack: #86c489; --over: #e0855a;
+  --hi: #86c489; --med: #e0a14e; --lo: #d99a72;
+  --shadow: 0 8px 28px rgba(0, 0, 0, .35);
+}
+:root[data-theme="light"] {
+  --bg: #f4f1ea; --panel: #fffdf7; --panel-2: #efece2; --ink: #2b2a24;
+  --muted: #6f6d60; --line: #e4dfd2; --accent: #a8834f; --accent-ink: #fdfbf5;
+  --under: #5b86a8; --ontrack: #5a9e6f; --over: #c0794f;
+  --hi: #5a9e6f; --med: #a8834f; --lo: #c0794f;
+  --shadow: 0 8px 24px rgba(60, 50, 30, .12);
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -39,6 +75,15 @@ button { font: inherit; cursor: pointer; }
 }
 .brand { font-weight: 700; letter-spacing: .2px; }
 .brand-pm { color: var(--accent); margin-right: 5px; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+/* segmented Split/Single control */
+.seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 2px; gap: 2px; }
+.seg button { border: none; background: transparent; color: var(--muted); border-radius: 8px; padding: 5px 11px; font-size: .82rem; font-weight: 600; }
+.seg button.active { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.theme-btn { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 9px; width: 34px; height: 32px; font-size: 1rem; line-height: 1; }
+.theme-btn:hover { border-color: var(--accent); }
+/* when the engine flag is showing it shouldn't push the toggles off — cap its width */
+.topbar .engine-flag { margin-left: 0; }
 
 /* --- split view: two panes, each a self-scrolling card --- */
 .split {
@@ -48,8 +93,10 @@ button { font: inherit; cursor: pointer; }
 .pane {
   flex: 1; min-width: 0; display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line);
-  border-radius: 16px; overflow: hidden;
+  border-radius: 16px; overflow: hidden; box-shadow: var(--shadow);
 }
+/* Single-view mode: hide the second pane; the first fills the width. */
+.split[data-mode="single"] .pane[data-pane="b"] { display: none; }
 .pane-head {
   flex: 0 0 auto; display: flex; align-items: center;
   padding: 10px 12px; border-bottom: 1px solid var(--line);
@@ -87,7 +134,7 @@ h3 { font-size: 1rem; margin: 0; }
 .chat-hero.shrunk .sub { display: none; }
 .chat-thread { flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .bubble { max-width: 88%; }
-.bubble.user { align-self: flex-end; background: var(--accent); color: #1a1a14; padding: 10px 14px; border-radius: 14px 14px 4px 14px; }
+.bubble.user { align-self: flex-end; background: var(--accent); color: var(--accent-ink); padding: 10px 14px; border-radius: 14px 14px 4px 14px; }
 .bubble.assistant { align-self: flex-start; max-width: 100%; width: 100%; }
 .typing { color: var(--muted); font-style: italic; }
 .logged { color: var(--ontrack); font-weight: 600; }
@@ -119,7 +166,7 @@ h3 { font-size: 1rem; margin: 0; }
 }
 .g-typed { visibility: hidden; }
 .g-rest { color: var(--muted); opacity: .75; }
-.chat-composer button { background: var(--accent); color: #1a1a14; border: none; border-radius: 12px; padding: 10px 18px; font-weight: 600; }
+.chat-composer button { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 12px; padding: 10px 18px; font-weight: 600; }
 .chat-composer button:disabled { opacity: .5; }
 
 /* Composer docked at the bottom of a pane (overrides the old fixed positioning). */
@@ -139,7 +186,7 @@ h3 { font-size: 1rem; margin: 0; }
 .tt-sep { border: none; border-top: 1px solid var(--line); margin: 6px 0; width: 100%; }
 
 /* --- estimate card (in chat) --- */
-.card { background: var(--panel-2); border: 1px solid var(--accent); border-radius: 16px; padding: 16px; }
+.card { background: var(--panel-2); border: 1px solid var(--accent); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); }
 .card .conf { font-size: .82rem; color: var(--muted); margin-bottom: 10px; }
 .pill { padding: 1px 8px; border-radius: 999px; font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; }
 .pill.high { background: rgba(143,191,135,.18); color: var(--hi); }
@@ -155,7 +202,7 @@ h3 { font-size: 1rem; margin: 0; }
 .card .meta ul { margin: 4px 0 0; padding-left: 18px; }
 .clarify { background: rgba(127,167,201,.12); border: 1px solid var(--under); border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: .86rem; }
 .card-actions { display: flex; gap: 10px; margin-top: 12px; }
-.card-actions button { flex: 1; border-radius: 10px; padding: 10px 14px; border: none; font-weight: 600; background: var(--accent); color: #1a1a14; }
+.card-actions button { flex: 1; border-radius: 10px; padding: 10px 14px; border: none; font-weight: 600; background: var(--accent); color: var(--accent-ink); }
 .card-actions .secondary { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
 .editable { width: 60px; background: var(--panel); border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 2px 4px; font: inherit; text-align: right; font-variant-numeric: tabular-nums; }
 .err { color: var(--over); }
@@ -304,10 +351,11 @@ h3 { font-size: 1rem; margin: 0; }
 .habits-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .chart-legend { display: flex; gap: 14px; font-size: .78rem; }
 .lg.sleep { color: var(--under); }
-.lg.rec { color: #d0655a; }
-.journal { display: flex; align-items: flex-start; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
-.journal .habitgrid-wrap { border: none; border-radius: 0; flex: 1 1 auto; }
-.chartcol { flex: 0 0 150px; border-left: 1px solid var(--line); align-self: stretch; }
-.chartcol-head { display: flex; align-items: flex-end; justify-content: space-between; padding: 0 6px 4px; box-sizing: border-box; }
-.chartcol-head .axmin, .chartcol-head .axmax { font-size: .58rem; color: var(--muted); }
-#journalChart { display: block; width: 150px; }
+.lg.rec { color: var(--over); }
+/* Sleep + recovery as a full-width horizontal chart card above the grid, so it
+   stays visible at any pane width (no longer docked beside the habit table). */
+.recovery-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; background: var(--panel-2); }
+.recovery-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.recovery-head .rc-title { font-size: .8rem; font-weight: 600; }
+#recoveryChart { display: block; width: 100%; height: 120px; }
+.rc-empty { color: var(--muted); font-size: .85rem; padding: 18px 0; text-align: center; }

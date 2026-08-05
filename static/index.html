@@ -10,6 +10,13 @@
   <div class="topbar">
     <div class="brand"><span class="brand-pm" aria-hidden="true">±</span>PlusMinus</div>
     <span class="engine-flag" id="engineFlag" hidden title="The reasoning engine isn't running — estimates are coming from the offline lookup table."></span>
+    <div class="topbar-actions">
+      <div class="seg" id="layoutToggle" role="group" aria-label="Layout">
+        <button data-mode="split">◫ Split</button>
+        <button data-mode="single">▢ Single</button>
+      </div>
+      <button class="theme-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light or dark theme">☾</button>
+    </div>
   </div>
 
   <!-- Two panes; each picks its view from a dropdown. Content blocks below are
@@ -114,20 +121,20 @@
       <div class="pane-scroll">
         <div class="habits-head">
           <h3>Habit tracker</h3>
-          <div class="chart-legend">
-            <span class="lg sleep">● Sleep (h)</span>
-            <span class="lg rec">● Recovery /100</span>
-          </div>
           <button class="secondary" id="addHabit">+ Add habit</button>
         </div>
-        <div class="journal">
-          <div class="habitgrid-wrap">
-            <table class="habitgrid" id="habitGrid"></table>
+        <div class="recovery-card">
+          <div class="recovery-head">
+            <span class="rc-title">Sleep &amp; recovery · last 14 days</span>
+            <div class="chart-legend">
+              <span class="lg sleep">● Sleep (h)</span>
+              <span class="lg rec">● Recovery /100</span>
+            </div>
           </div>
-          <div class="chartcol">
-            <div class="chartcol-head" id="chartHead"></div>
-            <svg id="journalChart" preserveAspectRatio="none"></svg>
-          </div>
+          <svg id="recoveryChart" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="habitgrid-wrap">
+          <table class="habitgrid" id="habitGrid"></table>
         </div>
       </div>
     </div>
