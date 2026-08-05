@@ -43,12 +43,13 @@ function fmtDate(iso, opts) {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, opts);
 }
-function statusOf(consumed, target) {
-  if (!target) return "under";
-  const pct = consumed / target;
-  if (pct > 1.02) return "over";
-  if (pct >= 0.9) return "ontrack";
-  return "under";
+// Ring fill class driven by the SERVER's macro_status (5%/15% bands) so the ring
+// and the summary-row emoji never disagree. green→on-track; off-target keeps its
+// direction (under/over) for color, but the on-track threshold is the server's.
+function ringClass(serverStatus, consumed, target) {
+  if (serverStatus === "green") return "ontrack";
+  if (serverStatus === "none" || !target) return "under";
+  return consumed > target ? "over" : "under";
 }
 function cap(s) { return s ? s[0].toUpperCase() + s.slice(1) : s; }
 
@@ -140,6 +141,9 @@ function addEstimateCard(est, text) {
     `<tr><td>${escapeHtml(it.name)}</td><td class="n">${Math.round(it.calories || 0)} cal · ${Math.round(it.protein || 0)}p ${Math.round(it.carb || 0)}c ${Math.round(it.fat || 0)}f</td></tr>`).join("");
   const assumptions = (est.assumptions || []).map((a) => `<li>${escapeHtml(a)}</li>`).join("");
   const swings = (est.swing_factors || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("");
+  // Log to the day Daily is showing, not always today — ConfirmItem.day supports it.
+  const targetDay = dailyDay || todayISO();
+  const dayLabel = targetDay === todayISO() ? "today" : fmtDate(targetDay, { month: "short", day: "numeric" });
   const engine = est.engine || (est.offline ? { mode: "offline", reason: "error", message: "Offline estimate." } : { mode: "llm" });
   updateEngineFlag(engine);
   const banner = engine.mode === "offline"
@@ -164,7 +168,7 @@ function addEstimateCard(est, text) {
       ${swings ? `<div class="meta"><b>Biggest swing:</b><ul>${swings}</ul></div>` : ""}
       <div class="card-actions">
         <button class="secondary act-discard">Discard</button>
-        <button class="act-confirm">Confirm &amp; log to today</button>
+        <button class="act-confirm">Confirm &amp; log to ${dayLabel}</button>
       </div>
     </div>`;
   $("#chatThread").appendChild(el);
@@ -177,9 +181,10 @@ function addEstimateCard(est, text) {
       name: text.slice(0, 120), calories: get("calories"), protein: get("protein"),
       carb: get("carb"), fat: get("fat"), confidence: est.confidence || "medium",
       uncertainty_cal: est.uncertainty_cal || 0, assumptions: est.assumptions || [],
-      source: "described", day: todayISO(),
+      source: "described", day: targetDay,
     }));
-    el.querySelector(".card-actions").innerHTML = `<span class="logged">✓ Logged to today</span>`;
+    el.querySelector(".card-actions").innerHTML = `<span class="logged">✓ Logged to ${dayLabel}</span>`;
+    recentFoodNames.unshift(text.slice(0, 120));  // keep autocomplete fresh within the session
     scrollThread();
   };
   scrollThread();
@@ -234,7 +239,7 @@ function renderRings(view, host, dayline) {
     node.querySelector(".ring-label").textContent = m.label;
     const fill = node.querySelector(".fill");
     fill.style.width = (target ? Math.min(100, (consumed / target) * 100) : 0) + "%";
-    fill.classList.add(statusOf(consumed, target));
+    fill.classList.add(ringClass(view.status && view.status[m.key], consumed, target));
     node.querySelector(".ring-sub").textContent = `${Math.round(consumed)} / ${Math.round(target)} ${m.unit}`;
     host.appendChild(node);
   }
@@ -254,7 +259,14 @@ function renderLog(items, host) {
     const assum = (it.assumptions && it.assumptions.length) ? `<span class="assum">${escapeHtml(it.assumptions[0])}</span>` : "";
     el.innerHTML = `<span class="dot ${conf}" title="${conf} confidence"></span>
       <div class="name"><b>${escapeHtml(it.name)}</b>${assum}</div>
-      <div class="macros"><span class="cal">${Math.round(it.calories || 0)}${it.uncertainty_cal ? " ±" + Math.round(it.uncertainty_cal) : ""}</span> · ${Math.round(it.protein || 0)}p ${Math.round(it.carb || 0)}c ${Math.round(it.fat || 0)}f</div>`;
+      <div class="macros"><span class="cal">${Math.round(it.calories || 0)}${it.uncertainty_cal ? " ±" + Math.round(it.uncertainty_cal) : ""}</span> · ${Math.round(it.protein || 0)}p ${Math.round(it.carb || 0)}c ${Math.round(it.fat || 0)}f</div>
+      <button class="entry-del" title="Remove this item" aria-label="Remove ${escapeHtml(it.name)}">✕</button>`;
+    el.querySelector(".entry-del").onclick = async () => {
+      const ok = await confirmSheet({ title: "Remove item?", message: `Delete “${it.name}” from this day?`, confirmLabel: "Remove", danger: true });
+      if (!ok) return;
+      await api(`/api/foods/${it.id}?day=${dailyDay || todayISO()}`, { method: "DELETE" });
+      loadDaily();
+    };
     host.appendChild(el);
   }
 }
@@ -367,16 +379,26 @@ function renderHabitGrid(grid) {
     await api(`/api/habits/${b.dataset.h}/toggle`, jsonPost({ day: b.dataset.d, done: on }));
   });
   table.querySelectorAll(".hname").forEach((s) => s.onclick = async () => {
-    const name = prompt("Rename habit:", s.textContent);
-    if (name && name.trim()) { await api(`/api/habits/${s.dataset.id}/rename`, jsonPost({ name })); loadHabits(); }
+    const vals = await openSheet({
+      title: "Rename habit", submitLabel: "Rename",
+      fields: [{ name: "name", label: "Name", type: "text", value: s.textContent }],
+    });
+    const name = vals && vals.name.trim();
+    if (name) { await api(`/api/habits/${s.dataset.id}/rename`, jsonPost({ name })); loadHabits(); }
   });
   table.querySelectorAll(".hx").forEach((b) => b.onclick = async () => {
-    if (confirm("Remove this habit and its history?")) { await api(`/api/habits/${b.dataset.del}`, { method: "DELETE" }); loadHabits(); }
+    if (await confirmSheet({ title: "Remove habit?", message: "This deletes the habit and its history.", confirmLabel: "Remove", danger: true })) {
+      await api(`/api/habits/${b.dataset.del}`, { method: "DELETE" }); loadHabits();
+    }
   });
 }
 $("#addHabit").onclick = async () => {
-  const name = prompt("New habit (e.g. Meditate, 3L water, No alcohol):", "");
-  if (name && name.trim()) { await api("/api/habits", jsonPost({ name })); loadHabits(); }
+  const vals = await openSheet({
+    title: "New habit", submitLabel: "Add",
+    fields: [{ name: "name", label: "Habit", type: "text", placeholder: "Meditate, 3L water, No alcohol" }],
+  });
+  const name = vals && vals.name.trim();
+  if (name) { await api("/api/habits", jsonPost({ name })); loadHabits(); }
 };
 
 // Vertical dual-line chart, aligned row-for-row with the grid (like the journal).
@@ -437,42 +459,140 @@ function drawJournalChart(dates, byDate) {
   head.innerHTML = `<span class="axmin">3h·0</span><span class="axmax">10h·100</span>`;
 }
 
-// ===================== SHARED ENTRY PROMPTS =====================
+// ===================== INLINE ENTRY SHEETS =====================
+// One reusable inline form replaces the old chain of blocking prompt()/alert()
+// dialogs. Resolves to a {name: value} map on submit, or null on cancel/Escape.
+
+function openSheet({ title, message = "", fields = [], submitLabel = "Save", cancelLabel = "Cancel", onRender }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "sheet-overlay";
+    const rowsHtml = fields.map((f) => {
+      const id = "sf_" + f.name;
+      let control;
+      if (f.type === "select") {
+        control = `<select id="${id}" data-name="${f.name}">${f.options.map((o) => {
+          const val = typeof o === "string" ? o : o.value;
+          const lab = typeof o === "string" ? o : o.label;
+          return `<option value="${escapeHtml(String(val))}" ${String(f.value) === String(val) ? "selected" : ""}>${escapeHtml(String(lab))}</option>`;
+        }).join("")}</select>`;
+      } else {
+        const type = f.type === "number" ? "number" : "text";
+        control = `<input id="${id}" data-name="${f.name}" type="${type}" ${f.step ? `step="${f.step}"` : ""} value="${f.value != null ? escapeHtml(String(f.value)) : ""}" placeholder="${escapeHtml(f.placeholder || "")}" autocomplete="off" />`;
+      }
+      return `<label class="sheet-row" data-row="${f.name}"><span class="sheet-label">${escapeHtml(f.label)}${f.optional ? ' <span class="muted">optional</span>' : ""}</span>${control}</label>`;
+    }).join("");
+    overlay.innerHTML = `<form class="sheet card">
+      <div class="sheet-title">${escapeHtml(title)}</div>
+      ${message ? `<p class="sheet-msg">${escapeHtml(message)}</p>` : ""}
+      ${rowsHtml}
+      <div class="card-actions">
+        ${cancelLabel ? `<button type="button" class="secondary sheet-cancel">${escapeHtml(cancelLabel)}</button>` : ""}
+        <button type="submit" class="sheet-ok">${escapeHtml(submitLabel)}</button>
+      </div></form>`;
+    document.body.appendChild(overlay);
+    const form = overlay.querySelector("form");
+    const onKey = (e) => { if (e.key === "Escape") close(null); };
+    const close = (val) => { overlay.remove(); document.removeEventListener("keydown", onKey); resolve(val); };
+    document.addEventListener("keydown", onKey);
+    overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(null); });
+    const cancelBtn = overlay.querySelector(".sheet-cancel");
+    if (cancelBtn) cancelBtn.onclick = () => close(null);
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const values = {};
+      form.querySelectorAll("[data-name]").forEach((el) => { values[el.dataset.name] = el.value; });
+      close(values);
+    });
+    const first = form.querySelector("[data-name]"); if (first) first.focus();
+    if (onRender) onRender(form);
+  });
+}
+
+// A yes/no confirmation as an inline sheet (replaces confirm()).
+async function confirmSheet({ title, message, confirmLabel = "OK", danger = false }) {
+  const vals = await openSheet({ title, message, submitLabel: confirmLabel });
+  if (vals && danger) return true;  // (danger just documents intent; submit === confirmed)
+  return vals != null;
+}
+
+const numOrNull = (v) => (v === "" || v == null ? null : Number(v));
+const sheetDay = (day) => fmtDate(day, { weekday: "short", month: "short", day: "numeric" });
 
 async function addTrainingPrompt(day) {
-  const type = (prompt("Training type (climb / run / lift / dance / walk / mixed / rest):", "climb") || "").trim().toLowerCase();
-  if (!type) return false;
-  let intensity = "moderate", duration = 0, subjective = null, burn = null;
-  if (type !== "rest") {
-    intensity = (prompt("Intensity (easy / moderate / hard / max):", "moderate") || "moderate").trim().toLowerCase();
-    duration = Number(prompt("Duration (minutes):", "60")) || 0;
-    const s = prompt("Subjective difficulty 1–10 (optional):", ""); subjective = s ? Number(s) : null;
-    const b = prompt("Calorie burn (blank = estimate from MET formula):", ""); burn = b ? Number(b) : null;
-  }
-  await api("/api/training", jsonPost({ day, type, intensity, duration_min: duration, subjective_difficulty: subjective, est_burn: burn }));
+  const vals = await openSheet({
+    title: `Add training · ${sheetDay(day)}`,
+    submitLabel: "Log session",
+    fields: [
+      { name: "type", label: "Type", type: "select", value: "climb", options: ["climb", "run", "lift", "dance", "walk", "mixed", "rest"] },
+      { name: "intensity", label: "Intensity", type: "select", value: "moderate", options: ["easy", "moderate", "hard", "max"] },
+      { name: "duration_min", label: "Duration (min)", type: "number", value: 60 },
+      { name: "subjective_difficulty", label: "Difficulty 1–10", type: "number", optional: true },
+      { name: "est_burn", label: "Calorie burn", type: "number", optional: true, placeholder: "blank = estimate from MET" },
+    ],
+    onRender: (form) => {
+      const typeSel = form.querySelector('[data-name="type"]');
+      const toggle = () => {
+        const rest = typeSel.value === "rest";
+        ["intensity", "duration_min", "subjective_difficulty", "est_burn"].forEach((n) => {
+          const row = form.querySelector(`[data-row="${n}"]`);
+          if (row) row.style.display = rest ? "none" : "";
+        });
+      };
+      typeSel.addEventListener("change", toggle); toggle();
+    },
+  });
+  if (!vals) return false;
+  const rest = vals.type === "rest";
+  await api("/api/training", jsonPost({
+    day, type: vals.type,
+    intensity: rest ? "easy" : vals.intensity,
+    duration_min: rest ? 0 : (Number(vals.duration_min) || 0),
+    subjective_difficulty: rest ? null : numOrNull(vals.subjective_difficulty),
+    est_burn: rest ? null : numOrNull(vals.est_burn),
+  }));
   return true;
 }
 async function logSleepPrompt(day) {
-  const h = prompt("Hours slept (optional):", "");
-  const rating = prompt("Sleep quality 1–10 (optional):", "");
-  const deep = prompt("Deep sleep minutes (optional):", "");
-  if (!h && !rating && !deep) return false;
-  await api("/api/sleep", jsonPost({ day, duration_h: h ? Number(h) : null, manual_rating: rating ? Number(rating) : null, deep_min: deep ? Number(deep) : null }));
+  const vals = await openSheet({
+    title: `Log sleep · ${sheetDay(day)}`,
+    submitLabel: "Save sleep",
+    fields: [
+      { name: "duration_h", label: "Hours slept", type: "number", step: "0.1", optional: true },
+      { name: "manual_rating", label: "Quality 1–10", type: "number", optional: true },
+      { name: "deep_min", label: "Deep sleep (min)", type: "number", optional: true },
+    ],
+  });
+  if (!vals) return false;
+  if (!vals.duration_h && !vals.manual_rating && !vals.deep_min) return false;
+  await api("/api/sleep", jsonPost({ day, duration_h: numOrNull(vals.duration_h), manual_rating: numOrNull(vals.manual_rating), deep_min: numOrNull(vals.deep_min) }));
   return true;
 }
 async function weighInPrompt(day) {
-  const w = prompt("Weight (lb):", ""); if (!w) return false;
-  await api("/api/weigh_in", jsonPost({ day, weight: Number(w), unit: "lb" }));
+  const vals = await openSheet({
+    title: `Weigh-in · ${sheetDay(day)}`,
+    submitLabel: "Save weight",
+    fields: [{ name: "weight", label: "Weight (lb)", type: "number", step: "0.1" }],
+  });
+  if (!vals || !vals.weight) return false;
+  await api("/api/weigh_in", jsonPost({ day, weight: Number(vals.weight), unit: "lb" }));
   return true;
 }
 async function editTargetPrompt(day) {
   const view = await api(`/api/day?day=${day}`);
   const cur = view.target || {}, scope = cur.scope || "default";
-  const cal = prompt(`Calorie target for '${scope}' days:`, Math.round(cur.calories || 0)); if (cal === null) return false;
-  const pro = prompt("Protein (g):", Math.round(cur.protein || 0)); if (pro === null) return false;
-  const carb = prompt("Carb (g):", Math.round(cur.carb || 0)); if (carb === null) return false;
-  const fat = prompt("Fat (g):", Math.round(cur.fat || 0)); if (fat === null) return false;
-  await api("/api/target", jsonPost({ calories: Number(cal), protein: Number(pro), carb: Number(carb), fat: Number(fat), scope }));
+  const vals = await openSheet({
+    title: `Target for ‘${scope}’ days`,
+    submitLabel: "Save target",
+    fields: [
+      { name: "calories", label: "Calories", type: "number", value: Math.round(cur.calories || 0) },
+      { name: "protein", label: "Protein (g)", type: "number", value: Math.round(cur.protein || 0) },
+      { name: "carb", label: "Carb (g)", type: "number", value: Math.round(cur.carb || 0) },
+      { name: "fat", label: "Fat (g)", type: "number", value: Math.round(cur.fat || 0) },
+    ],
+  });
+  if (!vals) return false;
+  await api("/api/target", jsonPost({ calories: Number(vals.calories), protein: Number(vals.protein), carb: Number(vals.carb), fat: Number(vals.fat), scope }));
   return true;
 }
 
@@ -579,16 +699,18 @@ async function renderMacro() {
 async function logPlanned(week, weekday) {
   try {
     const res = await api(`/api/programs/${currentProgramId}/log_day`, jsonPost({ week: Number(week), weekday: Number(weekday) }));
-    alert(`Logged “${res.detail}” to ${res.logged}. It now shows in Week & Daily.`);
+    await openSheet({ title: "Session logged", message: `“${res.detail}” logged to ${res.logged}. It now shows in Week & Daily.`, submitLabel: "Got it", cancelLabel: null });
   } catch (e) {
-    alert(e.message);
+    await openSheet({ title: "Couldn’t log", message: e.message, submitLabel: "OK", cancelLabel: null });
   }
 }
 
 $("#newRun").onclick = async () => { const p = await api("/api/programs", jsonPost({ preset: "running" })); currentProgramId = p.id; loadMacro(); };
 $("#newClimb").onclick = async () => { const p = await api("/api/programs", jsonPost({ preset: "climbing" })); currentProgramId = p.id; loadMacro(); };
 $("#delProgram").onclick = async () => {
-  if (currentProgramId && confirm("Delete this program?")) { await api(`/api/programs/${currentProgramId}`, { method: "DELETE" }); currentProgramId = null; loadMacro(); }
+  if (currentProgramId && await confirmSheet({ title: "Delete program?", message: "This removes the macrocycle and its planned sessions.", confirmLabel: "Delete", danger: true })) {
+    await api(`/api/programs/${currentProgramId}`, { method: "DELETE" }); currentProgramId = null; loadMacro();
+  }
 };
 
 // ===================== TAB AUTOCOMPLETE (ghost text) =====================

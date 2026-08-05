@@ -158,6 +158,20 @@ h3 { font-size: 1rem; margin: 0; }
 .entry .name .assum { display: block; color: var(--muted); font-size: .76rem; }
 .entry .macros { color: var(--muted); font-size: .82rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .entry .macros .cal { color: var(--ink); font-weight: 600; }
+.entry-del { flex: 0 0 auto; background: transparent; border: none; color: var(--muted); font-size: .9rem; cursor: pointer; padding: 4px 6px; border-radius: 8px; opacity: 0; transition: opacity .12s, color .12s; }
+.entry:hover .entry-del, .entry-del:focus { opacity: 1; }
+.entry-del:hover { color: var(--over); background: color-mix(in srgb, var(--over) 12%, transparent); }
+
+/* §4 inline entry sheets — one form replaces the old prompt()/alert() chain. */
+.sheet-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(3px); }
+.sheet { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+.sheet-title { font-weight: 700; font-size: 1.02rem; }
+.sheet-msg { color: var(--muted); font-size: .88rem; margin: -4px 0 2px; }
+.sheet-row { display: flex; flex-direction: column; gap: 5px; }
+.sheet-label { font-size: .8rem; color: var(--muted); }
+.sheet-row input, .sheet-row select { background: var(--panel); border: 1px solid var(--line); color: var(--ink); border-radius: 9px; padding: 9px 11px; font: inherit; width: 100%; }
+.sheet-row input:focus, .sheet-row select:focus { outline: none; border-color: var(--accent); }
+.sheet .card-actions { margin-top: 4px; }
 .empty { color: var(--muted); font-size: .9rem; text-align: center; padding: 24px 0; }
 
 /* ===================== WEEKLY calendar ===================== */

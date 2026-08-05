@@ -285,6 +285,13 @@ def list_items(day: str | None = None) -> list[dict[str, Any]]:
     return items
 
 
+def delete_food(food_id: int) -> bool:
+    """Delete one logged food item. Returns True if a row was removed."""
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM foods WHERE id = ?", (food_id,))
+        return cur.rowcount > 0
+
+
 def day_rollup(day: str | None = None) -> dict[str, Any]:
     """Sum macros for a day and aggregate uncertainty + confidence breakdown."""
     items = list_items(day)

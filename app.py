@@ -183,6 +183,14 @@ def confirm(item: ConfirmItem) -> dict[str, Any]:
     return _day_view(day)
 
 
+@api.delete("/api/foods/{food_id}")
+def delete_food(food_id: int, day: str | None = None) -> dict[str, Any]:
+    """Remove a mislogged item, then return the fresh day view."""
+    if not db.delete_food(food_id):
+        raise HTTPException(status_code=404, detail={"error": "Item not found."})
+    return _day_view(day)
+
+
 @api.get("/api/day")
 def day(day: str | None = None) -> dict[str, Any]:
     return _day_view(day)
