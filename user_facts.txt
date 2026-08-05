@@ -1,0 +1,7 @@
+# Known facts about this user, injected into the estimation engine's {{USER_FACTS}} block.
+# One fact per line. Full personalization (saved meals, brand facts) is a v2 feature —
+# this stub just seeds the prompt. Examples:
+#
+# - Eggs: 70 cal / 7g protein / 5g fat each (user's brand)
+# - PB2 (powdered PB): 1 serving = 15g = 60 cal / 6g protein / 5g carb / 1.5g fat
+# - Flourish pancake mix: 1 serving = 270 cal / 23p / 38c / 2f

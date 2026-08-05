@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "macrocoach",
+      "runtimeExecutable": ".venv/bin/uvicorn",
+      "runtimeArgs": ["app:api", "--port", "8099"],
+      "port": 8099
+    }
+  ]
+}
