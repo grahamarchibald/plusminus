@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+import coach
 import db
 from engine import estimate
 
@@ -298,10 +299,10 @@ def log_program_day(pid: int, req: LogDayReq) -> dict[str, Any]:
 
 
 @api.post("/api/coach")
-def coach(req: CoachRequest) -> dict[str, Any]:
+def post_coach(req: CoachRequest) -> dict[str, Any]:
     if not req.text or not req.text.strip():
         raise HTTPException(status_code=400, detail={"error": "Empty message."})
-    return db.coach_reply(req.text)
+    return coach.coach_reply(req.text)
 
 
 @api.get("/api/target")

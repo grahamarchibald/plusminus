@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -1053,74 +1052,3 @@ def log_program_day(pid: int, week: int, weekday: int) -> dict[str, Any] | None:
                 insert_training(entry)
                 return {"logged": day["date"], "detail": entry["detail"]}
     return None
-
-
-def parse_program_command(text: str) -> dict[str, Any] | None:
-    """Offline NL parse: recognize sport + weeks + base km + % + deload from a sentence."""
-    t = (text or "").lower()
-    sport = None
-    if any(k in t for k in ("run", "5k", "10k", "marathon", "speed", "long run")):
-        sport = "running"
-    elif any(k in t for k in ("climb", "boulder", "arc", "limit")):
-        sport = "climbing"
-    if not sport:
-        return None
-    weeks_m = re.search(r"(\d+)\s*[- ]?\s*week", t)
-    weeks = int(weeks_m.group(1)) if weeks_m else 10
-    weeks = max(1, min(52, weeks))
-    if sport == "running":
-        base_m = re.search(r"(\d+(?:\.\d+)?)\s*(?:km|k\b)", t)
-        base = float(base_m.group(1)) if base_m else 30.0
-        pct_m = re.search(r"(\d+(?:\.\d+)?)\s*%", t)
-        pct = (float(pct_m.group(1)) / 100.0) if pct_m else 0.10
-        spec = running_program(weeks=weeks, base=base, pct=pct)
-    else:
-        spec = climbing_program(weeks=weeks)
-    if "deload" not in t:
-        spec["progression"]["deload_every"] = 0  # user didn't ask for a deload
-    else:
-        dm = re.search(r"(?:every\s*)?(\d+)(?:th|rd|nd|st)?\s*week\s*deload|week\s*(\d+)\s*deload|deload\s*(?:every\s*)?(\d+)", t)
-        if dm:
-            n = next((g for g in dm.groups() if g), None)
-            if n:
-                spec["progression"]["deload_every"] = int(n)
-    return spec
-
-
-def coach_reply(text: str) -> dict[str, Any]:
-    """Offline training coach: create/modify programs or summarize the current week."""
-    t = (text or "").strip()
-    tl = t.lower()
-
-    # "what's this week" style query
-    if any(k in tl for k in ("this week", "what's on", "whats on", "today", "next session")):
-        progs = list_programs()
-        if not progs:
-            return {"reply": "No program yet. Try: “Create a 10-week running program starting at 30km, +10% a week, week-4 deload.”"}
-        grid = program_grid(progs[0]["id"])
-        cur = next((w for w in grid["weeks"] if w["is_current"]), grid["weeks"][0])
-        lines = [f"**{grid['program']['name']}** — week {cur['week']}{' (deload)' if cur['deload'] else ''}"
-                 + (f", target {cur['km']} km" if cur["km"] else "")]
-        for d in cur["days"]:
-            if d["session"]:
-                s = d["session"]
-                lines.append(f"· {d['wd_label']}: {s.get('role', s.get('type'))}"
-                             + (f" — {s['planned_km']} km" if s.get("planned_km") else "")
-                             + (f" ({s['intensity']})" if s.get("intensity") else ""))
-        return {"reply": "\n".join(lines), "program_id": progs[0]["id"]}
-
-    # program creation
-    spec = parse_program_command(t)
-    if spec:
-        p = create_program(spec)
-        grid = program_grid(p["id"])
-        vols = [w["km"] for w in grid["weeks"] if w["km"] is not None]
-        ramp = (" Weekly volume ramps " + " → ".join(f"{v}km" for v in vols[:5]) + ("…" if len(vols) > 5 else "") + ".") if vols else ""
-        deloads = [str(w["week"]) for w in grid["weeks"] if w["deload"]]
-        dl = f" Deload weeks: {', '.join(deloads)}." if deloads else ""
-        return {
-            "reply": f"Built **{p['name']}** ({p['num_weeks']} weeks).{ramp}{dl} Open the Macrocycle view to see the full grid and log sessions.",
-            "program_id": p["id"], "action": "created",
-        }
-
-    return {"reply": "I can build a training macrocycle. Try: “10-week running program, 30km, +10% a week, week-4 deload” or “8-week climbing block”."}

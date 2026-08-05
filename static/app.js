@@ -508,7 +508,11 @@ async function sendCoach(text) {
   const thinking = addCoachBubble("assistant", `<span class="typing">thinking…</span>`);
   try {
     const data = await api("/api/coach", jsonPost({ text }));
-    thinking.innerHTML = mdLite(data.reply);
+    updateEngineFlag(data.engine);
+    const banner = data.engine && data.engine.mode === "offline"
+      ? `<div class="engine-banner">⚠ ${escapeHtml(data.engine.message || "Offline coach — pattern-matched, not reasoned.")}</div>`
+      : "";
+    thinking.innerHTML = banner + mdLite(data.reply);
     if (data.program_id) {
       const btn = document.createElement("button");
       btn.className = "secondary viewmacro";
